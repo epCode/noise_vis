@@ -7,6 +7,17 @@ noise_vis = {
   last_image = {}
 }
 
+
+local dnp = {
+  offset = 4,
+  scale = 2,
+  spread = {x = 10, y = 10, z = 10},
+  seed = 47,
+  octaves = 8,
+  persistence = 0.6,
+}
+
+
 dofile(core.get_modpath("noise_vis").."/util.lua")
 
 local only_interface = minetest.settings:get_bool("only_interface", true)
@@ -26,12 +37,12 @@ function noise_vis.create_map(pos1, pos2, name, callback, noiseparams, mapname)
   end
 
   local noisemap = core.get_value_noise({
-    offset = noiseparams.offset or 4,
-    scale = noiseparams.scale or 2,
-    spread = noiseparams.spread or {x = 10, y = 10, z = 10},
-    seed = noiseparams.seed or 47,
-    octaves = noiseparams.octaves or 3,
-    persistence = noiseparams.persistence or 0.5,
+    offset = noiseparams.offset or dnp.offset,
+    scale = noiseparams.scale or dnp.scale,
+    spread = noiseparams.spread or dnp.spread,
+    seed = noiseparams.seed or dnp.seed,
+    octaves = noiseparams.octaves or dnp.octaves,
+    persistence = noiseparams.persistence or dnp.persistence,
   })
 
   local max_v, min_v = 0, 100
@@ -45,6 +56,8 @@ function noise_vis.create_map(pos1, pos2, name, callback, noiseparams, mapname)
       if n > max_v then max_v = n elseif n < min_v then min_v = n end
 		end
 	end
+  noise_vis.last_image[name].max = tostring(string.sub(max_v, 1, 4))
+  noise_vis.last_image[name].min = tostring(string.sub(min_v, 1, 4))
   local minn_max = max_v-min_v
   local bright = 255/minn_max -- multiplyer to get the highest value to 255
   for z = 1, res.z do
@@ -70,7 +83,7 @@ function noise_vis.create_map(pos1, pos2, name, callback, noiseparams, mapname)
   mapname = name or "tnoise"
   local filename = mapname .. (pos1.x*pos1.y*pos1.z+math.random(1000)) .. ".tga"
   
-  noise_vis.last_image[name] = filename
+  noise_vis.last_image[name].img = filename
   
   local filenamepath = map_textures_path .. mapname .. ".tga"
   
@@ -96,7 +109,7 @@ local function add_noisehud(name)
   end
   noisehud[name] = player:hud_add({
     type = "image",
-    text = noise_vis.last_image[name] or "blank.png",
+    text = noise_vis.last_image[name].img or "blank.png",
     scale = {x=5,y=5},
     position = {x=1,y=0},
     offset = {x=-300.,y=300},
@@ -127,18 +140,20 @@ minetest.register_chatcommand("noise", {
 })]]
 local function get_noise_formspec(name, image_path, fields)
   fields = fields or {}
-  local offset = tonumber(fields.offset) or 4
-  local scale = tonumber(fields.scale) or 2
-  local spread_x = tonumber(fields.spread_x) or 100
-  local spread_y = tonumber(fields.spread_y) or 100
-  local spread_z = tonumber(fields.spread_z) or 100
-  local seed = tonumber(fields.seed) or 47
-  local octaves = tonumber(fields.octaves) or 4
-  local persistence = tonumber(fields.persistence) or 0.5
+  local offset = tonumber(fields.offset) or dnp.offset
+  local scale = tonumber(fields.scale) or dnp.scale
+  local spread_x = tonumber(fields.spread_x) or dnp.spread.x
+  local spread_y = tonumber(fields.spread_y) or dnp.spread.y
+  local spread_z = tonumber(fields.spread_z) or dnp.spread.z
+  local seed = tonumber(fields.seed) or dnp.seed
+  local octaves = tonumber(fields.octaves) or dnp.octaves
+  local persistence = tonumber(fields.persistence) or dnp.persistence
   local xpos = tonumber(fields.xpos) or 0
   local ypos = tonumber(fields.ypos) or 0
   local zpos = tonumber(fields.zpos) or 0
   local dist = tonumber(fields.dist) or 100
+  local minv = fields.minv
+  local maxv = fields.maxv
   local code = [[
 {
   offset = ]]..offset..[[,
@@ -182,6 +197,7 @@ local function get_noise_formspec(name, image_path, fields)
                    backimage ..
                    "field[12.5,1;3,1;dist;Distance;"..dist.."]" ..
                    "image_button[0.75,5.8;7,3.5;noise_vis_button.png;submit;]" ..
+                   "image_button[15.5,0;1.2,1.2;noise_vis_quit_button.png;quitbutton;]" ..
                    "image_button[2.74,8.9;3,1.5;noise_vis_code_button.png;code;]"
 
   if image_path and not fields.codedisplay then
@@ -191,6 +207,13 @@ local function get_noise_formspec(name, image_path, fields)
     formspec = formspec ..
       "textarea[8.7,1.9;7.55,6.35;codedisplayer;;"..code.."]" ..
       "image_button[8.32,7.5;7.77,2.33;noise_vis_to_code_button.png;codesubmit;]"
+  end
+  if minv and maxv then
+    formspec = formspec ..
+      "label[9,9.71;Visible noise values:]" ..
+      "label[11.32,9.71;Min: "..minv.."]" ..
+      "label[12.32,9.71;Max: "..maxv.."]"
+    
   end
 
   return formspec
@@ -207,14 +230,14 @@ minetest.register_chatcommand("noise", {
 
 minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname == "noise_map:params" then
-        local offset = tonumber(fields.offset) or 4
-        local scale = tonumber(fields.scale) or 2
-        local spread_x = tonumber(fields.spread_x) or 100
-        local spread_y = tonumber(fields.spread_y) or 100
-        local spread_z = tonumber(fields.spread_z) or 100
-        local seed = tonumber(fields.seed) or 47
-        local octaves = tonumber(fields.octaves) or 4
-        local persistence = tonumber(fields.persistence) or 0.5
+        local offset = tonumber(fields.offset) or dnp.offset
+        local scale = tonumber(fields.scale) or dnp.scale
+        local spread_x = tonumber(fields.spread_x) or dnp.spread.x
+        local spread_y = tonumber(fields.spread_y) or dnp.spread.y
+        local spread_z = tonumber(fields.spread_z) or dnp.spread.z
+        local seed = tonumber(fields.seed) or dnp.seed
+        local octaves = tonumber(fields.octaves) or dnp.octaves
+        local persistence = tonumber(fields.persistence) or dnp.persistence
         local xpos = tonumber(fields.xpos) or 0
         local ypos = tonumber(fields.ypos) or 0
         local zpos = tonumber(fields.zpos) or 0
@@ -228,57 +251,72 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         local pos2 = vector.add(pos1, dist)
 
         local pname = player:get_player_name()
-        local image_path = noise_vis.last_image[pname] or "blank.png"
+        local image_path = noise_vis.last_image[pname].img or "blank.png"
+        
+        local ffields = fields
+        if fields.code then
+          ffields["codedisplay"] = true
+        end
+        if codedisplayer and fields.codesubmit then
+          local llooplist = codedisplayer
+          if not codedisplayer.spread then
+            print("used)")
+            llooplist = codedisplayer[""]
+          end
+          print(core.serialize(codedisplayer))
+          for noisep,value in pairs(llooplist) do
+            ffields[noisep] = value
+          end
+          ffields["spread_x"] = llooplist.spread.x
+          ffields["spread_y"] = llooplist.spread.y
+          ffields["spread_z"] = llooplist.spread.z
+          
+          offset = ffields.offset or offset
+          scale = ffields.scale or scale
+          spread_x = ffields.spread_x or spread_x
+          spread_y = ffields.spread_y or spread_y
+          spread_z = ffields.spread_z or spread_z
+          seed = ffields.seed or seed
+          octaves = ffields.octaves or octaves
+          persistence = ffields.persistence or persistence
+          xpos = ffields.xpos or xpos
+          ypos = ffields.ypos or ypos
+          zpos = ffields.zpos or zpos
+          dist = ffields.dist or dist
+        end
+        
+        
         if fields.submit or fields.codesubmit or fields.code then
-          local ffields = fields
-          if fields.code then
-            ffields["codedisplay"] = true
+          if not fields.code then
+            local filename = noise_vis.create_map(pos1, pos2, player:get_player_name(), function(name)
+              ffields.minv = noise_vis.last_image[pname].min
+              ffields.maxv = noise_vis.last_image[pname].max
+
+              image_path = noise_vis.last_image[pname].img or "blank.png"
+              -- This callback can be used to update the formspec with the new image
+              minetest.show_formspec(name, "noise_map:params", get_noise_formspec(name, image_path, ffields))
+            end, {
+                offset = offset,
+                scale = scale,
+                spread = {x = spread_x, y = spread_y, z = spread_z},
+                seed = seed,
+                octaves = octaves,
+                persistence = persistence,
+            }, 50)
+          else
+            minetest.show_formspec(pname, "noise_map:params", get_noise_formspec(pname, image_path, ffields))
           end
-          if codedisplayer and fields.codesubmit then
-            local llooplist = codedisplayer
-            if not codedisplayer.spread then
-              print("used)")
-              llooplist = codedisplayer[""]
-            end
-            print(core.serialize(codedisplayer))
-            for noisep,value in pairs(llooplist) do
-              ffields[noisep] = value
-            end
-            ffields["spread_x"] = llooplist.spread.x
-            ffields["spread_y"] = llooplist.spread.y
-            ffields["spread_z"] = llooplist.spread.z
-            
-            offset = ffields.offset or offset
-            scale = ffields.scale or scale
-            spread_x = ffields.spread_x or spread_x
-            spread_y = ffields.spread_y or spread_y
-            spread_z = ffields.spread_z or spread_z
-            seed = ffields.seed or seed
-            octaves = ffields.octaves or octaves
-            persistence = ffields.persistence or persistence
-            xpos = ffields.xpos or xpos
-            ypos = ffields.ypos or ypos
-            zpos = ffields.zpos or zpos
-            dist = ffields.dist or dist
-          end
-          local filename = noise_vis.create_map(pos1, pos2, player:get_player_name(), function(name)
-            image_path = noise_vis.last_image[pname] or "blank.png"
-            -- This callback can be used to update the formspec with the new image
-            minetest.show_formspec(name, "noise_map:params", get_noise_formspec(name, image_path, ffields))
-          end, {
-              offset = offset,
-              scale = scale,
-              spread = {x = spread_x, y = spread_y, z = spread_z},
-              seed = seed,
-              octaves = octaves,
-              persistence = persistence,
-          }, 50)
-        elseif only_interface then
+        elseif fields.quitbutton then
           core.disconnect_player(pname)
+        else
+          minetest.show_formspec(pname, "noise_map:params", get_noise_formspec(pname, image_path, ffields))
         end
     end
 end)
 
+core.register_on_joinplayer(function(player)
+  noise_vis.last_image[player:get_player_name()] = {}
+end)
 if only_interface then
   core.register_on_joinplayer(function(player)
     local name = player:get_player_name()
