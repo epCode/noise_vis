@@ -1,3 +1,3 @@
 # Only interface forces the noise visualizer
 # to be the only usable screen.
-only_interface (Interface Only) bool false
+# only_interface (Interface Only) bool false
