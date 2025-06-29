@@ -307,7 +307,11 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
             minetest.show_formspec(pname, "noise_map:params", get_noise_formspec(pname, image_path, ffields))
           end
         elseif fields.quitbutton then
-          core.disconnect_player(pname)
+          if only_interface then
+            core.disconnect_player(pname)
+          else
+            core.close_formspec(pname, "noise_map:params")
+          end
         else
           minetest.show_formspec(pname, "noise_map:params", get_noise_formspec(pname, image_path, ffields))
         end
